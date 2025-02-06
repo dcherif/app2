@@ -8,3 +8,36 @@
     <li><a href="../app5/index.html">App5</a></li>
   </ul>
 </div>
+
+
+
+MyLambdaFunction:
+  Type: AWS::Lambda::Function
+  Properties:
+    FunctionName: ExecuteSQLScripts
+    Handler: index.lambda_handler
+    Runtime: python3.9
+    Role: !GetAtt LambdaExecutionRole.Arn
+    Code:
+      ZipFile: |
+        import pymssql
+        import boto3
+        import os
+
+        def lambda_handler(event, context):
+            server = os.getenv("DB_HOST")
+            user = os.getenv("DB_USER")
+            password = os.getenv("DB_PASS")
+            conn = pymssql.connect(server, user, password)
+            cursor = conn.cursor()
+
+            sql_script = "CREATE DATABASE my_new_database;"
+            cursor.execute(sql_script)
+            conn.commit()
+            conn.close()
+            return {"status": "success"}
+    Environment:
+      Variables:
+        DB_HOST: !GetAtt MyRDSInstance.Endpoint.Address
+        DB_USER: "admin"
+        DB_PASS: !Sub "{{resolve:secretsmanager:${MySecret}:SecretString:password}}"
