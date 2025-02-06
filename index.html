@@ -9,10 +9,82 @@
   </ul>
 </div>
 
+Resources:
+  # AWS Secrets Manager for Database Credentials
+  DBSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "hedx-db-secret-${Environment}"
+      Description: "RDS Database credentials"
+      SecretString: !Sub
+        - '{"username": "${DBUsername}", "password": "${DBPassword}"}'
+        - DBUsername: !Ref DBUsername
+          DBPassword: !Ref DBPassword
+
+  # Security Group for RDS
+  RDSInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Allow database access"
+      VpcId: !Ref VPCID
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 1433
+          ToPort: 1433
+          CidrIp: "10.0.0.0/16"
+
+  # Lambda Function for Database Initialization
+  DBInitFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "hedx-db-init-${Environment}"
+      Runtime: python3.9
+      Handler: index.lambda_handler
+      Role: !GetAtt DBInitLambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import pymysql
+          def lambda_handler(event, context):
+              secret_name = "hedx-db-secret-${Environment}"
+              client = boto3.client('secretsmanager')
+              secret = json.loads(client.get_secret_value(SecretId=secret_name)['SecretString'])
+              connection = pymysql.connect(host='your-rds-endpoint',
+                                           user=secret['username'],
+                                           password=secret['password'],
+                                           database='your-database')
+              cursor = connection.cursor()
+              cursor.execute("CREATE TABLE IF NOT EXISTS test (id INT PRIMARY KEY, name VARCHAR(255));")
+              connection.commit()
+              return {"statusCode": 200, "body": "Table created"}
+
+  # Trigger Lambda after RDS creation
+  DBInitTrigger:
+    Type: Custom::DBInitTrigger
+    Properties:
+      ServiceToken: !GetAtt DBInitFunction.Arn
+
+  # RDS Instance with Security Group
+  sqlRds:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: "sqlserver-ee"
+      DBInstanceIdentifier: !Sub "hedx-sqlserver-${Environment}"
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      VPCSecurityGroups:
+        - !Ref RDSInstanceSecurityGroup
+      AllocatedStorage: 100
+      MultiAZ: false
+      StorageEncrypted: true
+      PubliclyAccessible: false
+      StorageType: gp2
+      BackupRetentionPeriod: 7MyLambdaFunction:
+  
 
 
-MyLambdaFunction:
-  Type: AWS::Lambda::Function
+Type: AWS::Lambda::Function
   Properties:
     FunctionName: ExecuteSQLScripts
     Handler: index.lambda_handler
