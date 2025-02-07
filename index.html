@@ -10,6 +10,189 @@
 </div>
 
 
+AWSTemplateFormatVersion: 2010-09-09
+Description: "HEDX RDS SQL with Lambda & Secrets Manager"
+
+Parameters:
+  Environment:
+    Description: Environment to build
+    Type: String
+    AllowedValues: [ 'development', 'test' ]
+    Default: 'development'
+  DBInstanceClass:
+    Description: The database instance class
+    Type: String
+    Default: db.t3.xlarge
+  AllocatedStorage:
+    Description: The size of the database (Gb)
+    Type: Number
+    Default: 100
+  VPCSubnetIds:
+    Description: The VPC subnet IDs
+    Type: List<AWS::EC2::Subnet::Id>
+  DBUsername:
+    Type: String
+    Default: "admin"
+  DBPassword:
+    Type: String
+    NoEcho: true
+
+Resources:
+
+  ## Security Group (Ensures RDS is Private)
+  RDSPrivateSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Security group for private RDS instance"
+      VpcId: !Ref VPCSubnetIds
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 1433
+          ToPort: 1433
+          CidrIp: "10.0.0.0/16"  # Using CIDR from your template
+
+  ## Secrets Manager to Store DB Credentials
+  RDSSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: "rds-secret-hedx"
+      Description: "Stores RDS credentials"
+      SecretString: !Sub |
+        {
+          "username": "${DBUsername}",
+          "password": "${DBPassword}",
+          "engine": "sqlserver-ee",
+          "host": "${SQLRDSInstance.Endpoint.Address}",
+          "port": "1433",
+          "dbname": "hedx_db"
+        }
+
+  ## RDS Instance (Private)
+  SQLRDSInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub "hedx-sqlserver-${Environment}"
+      Engine: "sqlserver-ee"
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: !Ref AllocatedStorage
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      VPCSecurityGroups:
+        - !GetAtt RDSPrivateSecurityGroup.GroupId
+      DBSubnetGroupName: !Ref VPCSubnetIds
+      PubliclyAccessible: false
+      MultiAZ: false
+      StorageEncrypted: true
+      BackupRetentionPeriod: 7
+
+  ## IAM Role for Lambda
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "LambdaExecutionRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: [ "lambda.amazonaws.com" ]
+            Action: [ "sts:AssumeRole" ]
+      Policies:
+        - PolicyName: "LambdaRDSAccessPolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - rds-data:ExecuteStatement
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+
+  ## Lambda Function to Initialize DB
+  InitializeDBLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: "InitializeHEDXDB"
+      Runtime: python3.9
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: "index.lambda_handler"
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import pymysql
+
+          def lambda_handler(event, context):
+              secret_name = "rds-secret-hedx"
+              region_name = "us-east-1"
+              session = boto3.session.Session()
+              client = session.client(service_name="secretsmanager", region_name=region_name)
+              
+              secret = json.loads(client.get_secret_value(SecretId=secret_name)["SecretString"])
+              
+              connection = pymysql.connect(
+                  host=secret["host"],
+                  user=secret["username"],
+                  password=secret["password"],
+                  database=secret["dbname"],
+                  port=int(secret["port"])
+              )
+
+              with connection.cursor() as cursor:
+                  sql_script = "CREATE TABLE IF NOT EXISTS test_table (id INT PRIMARY KEY, name VARCHAR(50));"
+                  cursor.execute(sql_script)
+                  connection.commit()
+              
+              return {"statusCode": 200, "body": "Database initialized successfully"}
+
+  ## EventBridge Rule to Trigger Lambda after RDS Creation
+  RDSCreationTrigger:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: "TriggerLambdaAfterRDS"
+      EventPattern:
+        source:
+          - "aws.rds"
+        detail-type:
+          - "AWS API Call via CloudTrail"
+        detail:
+          eventSource:
+            - "rds.amazonaws.com"
+          eventName:
+            - "CreateDBInstance"
+      Targets:
+        - Arn: !GetAtt InitializeDBLambda.Arn
+          Id: "InitializeDBLambda"
+
+  ## SNS Topic for Notifications
+  SNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: "RDS Provisioning Notifications"
+      TopicName: "RDSProvisioning"
+
+  ## SNS Subscription (Email Notification)
+  SNSSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: "email"
+      TopicArn: !Ref SNSTopic
+      Endpoint: "your-email@example.com"  # Change to your email
+
+Outputs:
+  RDSInstanceEndpoint:
+    Description: "RDS SQL Server Endpoint"
+    Value: !GetAtt SQLRDSInstance.Endpoint.Address
+
+
+
+
+
+
+
   
 
 
