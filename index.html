@@ -9,7 +9,20 @@
   </ul>
 </div>
 
-
+Resources:
+  MySSMDocument:
+    Type: AWS::SSM::Document
+    Properties:
+      DocumentType: Command
+      Content:
+        schemaVersion: "2.2"
+        description: "Run a custom script"
+        mainSteps:
+          - action: aws:runShellScript
+            name: RunShellScript
+            inputs:
+              runCommand:
+                - echo "Hello, World"
 
   ## SNS Topic for Notifications
   SNSTopic:
