@@ -45,7 +45,81 @@ Outputs:
     Value: !GetAtt SQLRDSInstance.Endpoint.Address
 
 
+AWSTemplateFormatVersion: '2010-09-09'
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: LambdaRDSExecutionRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaBasicExecution
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: arn:aws:logs:*:*:*
 
+        - PolicyName: LambdaRDSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - rds:DescribeDBInstances
+                  - rds:DescribeDBClusters
+                  - rds:ExecuteStatement
+                  - rds:BatchExecuteStatement
+                  - rds-data:ExecuteStatement
+                  - rds-data:BatchExecuteStatement
+                Resource: "*"
+
+        - PolicyName: LambdaVPCNetworking
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:CreateNetworkInterface
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DeleteNetworkInterface
+                Resource: "*"
+
+        - PolicyName: LambdaSecretsManagerAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: "*"
+
+        - PolicyName: LambdaCloudFormationResponse
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudformation:DescribeStacks
+                  - cloudformation:SignalResource
+                Resource: "*"
+
+Outputs:
+  LambdaExecutionRoleARN:
+    Description: "ARN of the IAM role for Lambda execution"
+    Value: !GetAtt LambdaExecutionRole.Arn
 
 
 
