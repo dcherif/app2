@@ -10,6 +10,17 @@
 </div>
 
 
+import json
+
+def lambda_handler(event, context):
+    print("Received event: " + json.dumps(event, indent=2))  # Add this for debugging
+
+    if "ResponseURL" not in event:
+        raise KeyError("ResponseURL is missing from the event")
+
+    # Proceed with normal execution
+
+
 https://repost.aws/knowledge-center/cloudformation-cfn-response-lambda
 
 
