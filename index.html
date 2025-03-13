@@ -10,6 +10,35 @@
 </div>
 
 
+Environment
+Category	
+Instance Type
+RAM (GB)	vCPU	Storage (GB)
+Development
+Requested	t3.medium	4	2	50
+Development
+Existing/Created
+t3.large	8	2	100
+Development
+Required/Recommended
+m5.large	8	2	100
+Staging	Requested	t3.large	8	2	100
+Staging	
+Existing/Created
+t3.xlarge	16	4	200
+Staging	
+Required/Recommended
+m5.xlarge	16	4	200
+Production
+Requested	m5.large	8	2	100
+Production
+Existing/Created
+m5.xlarge	16	4	200
+Production
+Required/Recommended
+m5.2xlarge	32	8	500
+
+
 import json
 
 def lambda_handler(event, context):
