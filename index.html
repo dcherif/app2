@@ -10,23 +10,59 @@
 </div>
 
 
-Environment
-Category	
-Instance Type
-RAM (GB)	vCPU	Storage (GB)
-Development
-Requested	t3.medium	4	2	50
-Development
-Existing/Created
-t3.large	8	2	100
-Development
-Required/Recommended
-m5.large	8	2	100
-Staging	Requested	t3.large	8	2	100
-Staging	
-Existing/Created
-t3.xlarge	16	4	200
-Staging	
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Deploy Tableau Server on an existing Windows Server 2022 EC2 instance."
+
+Parameters:
+  InstanceId:
+    Type: String
+    Description: "The ID of the existing Windows Server 2022 EC2 instance."
+
+  TableauDownloadUrl:
+    Type: String
+    Default: "https://downloads.tableau.com/esdalt/2024.1.0/tableau-server-64bit-2024-1-0.exe"
+    Description: "URL to download Tableau Server installer."
+
+  AdminUsername:
+    Type: String
+    Description: "Tableau admin username"
+  
+  AdminPassword:
+    Type: String
+    NoEcho: true
+    Description: "Tableau admin password"
+
+Resources:
+  TableauInstallScript:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      InstanceId: !Ref InstanceId
+      UserData:
+        Fn::Base64: 
+          !Sub |
+            <powershell>
+            # Download Tableau Server Installer
+            $installerPath = "C:\tableau-installer.exe"
+            Invoke-WebRequest -Uri "${TableauDownloadUrl}" -OutFile $installerPath
+            
+            # Install Tableau Server
+            Start-Process -FilePath $installerPath -ArgumentList "/quiet /accepteula" -Wait
+            
+            # Initialize Tableau Server
+            & "C:\Program Files\Tableau\Tableau Server\packages\scripts.*\initialize-tsm.ps1"
+            
+            # Activate Tableau Server with admin credentials
+            tsm login -u "${AdminUsername}" -p "${AdminPassword}"
+            
+            # Register Tableau Server
+            tsm register --file "C:\tableau_registration.json"
+            
+            # Accept EULA
+            tsm licenses accept --eula
+            
+            # Configure & Start Tableau Server
+            tsm initialize --start-server
+            </powershell>
 Required/Recommended
 m5.xlarge	16	4	200
 Production
